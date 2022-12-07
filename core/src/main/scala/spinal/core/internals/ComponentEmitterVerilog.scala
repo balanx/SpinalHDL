@@ -350,13 +350,22 @@ class ComponentEmitterVerilog(
         val bb = child.asInstanceOf[BlackBox]
         val genericFlat = bb.genericElements
 
+        var wordWidth = "wordWidth"
+        var wordCount = "wordCount"
+
         if (genericFlat.nonEmpty) {
-          logics ++= s"#(\n"
+          logics ++= s"\n  #(\n"
           for (e <- genericFlat) {
             e match {
               case (name: String, bt: BaseType) => logics ++= s"    .${name}(${emitExpression(bt.getTag(classOf[GenericValue]).get.e)}),\n"
               case (name: String, s: String)    => logics ++= s"    .${name}(${"\""}${s}${"\""}),\n"
-              case (name: String, i: Int)       => logics ++= s"    .${name}($i),\n"
+              case (name: String, i: Int)       => {
+                logics ++= s"    .${name}($i),\n"
+                if (definitionString.startsWith("Ram_")) {
+                  if (name.equals(wordWidth)) wordWidth = i.toString
+                  if (name.equals(wordCount)) wordCount = i.toString
+                }
+              }
               case (name: String, d: Double)    => logics ++= s"    .${name}($d),\n"
               case (name: String, b: Boolean)   => logics ++= s"    .${name}(${if(b) "1'b1" else "1'b0"}),\n"
               case (name: String, b: BigInt)    => logics ++= s"    .${name}(${b.toString(16).size*4}'h${b.toString(16)}),\n"
@@ -366,6 +375,20 @@ class ComponentEmitterVerilog(
           logics.replace(logics.length - 2, logics.length, "\n")
           logics ++= s"  ) "
         }
+
+        if (definitionString.startsWith("Ram_") ) {
+          logics.insert(logics.indexOf('\n'), "\n`endif")
+
+          val rambb = new StringBuilder()
+
+          rambb ++= "`ifdef VENDOR\n"
+          rambb ++= s"  $instanceAttributes${definitionString}"
+          rambb ++= s"_${wordWidth}_${wordCount}\n"
+          rambb ++= "`else\n"
+
+          logics.insert(0, rambb)
+        }
+
       }
 
       val maxNameLength: Int = if(child.getOrdredNodeIo.isEmpty) 0 else child.getOrdredNodeIo.map(data => emitReferenceNoOverrides(data).length()).max
